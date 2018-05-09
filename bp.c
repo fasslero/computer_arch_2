@@ -7,24 +7,24 @@ typedef enum  {WNT, NT, WT, T} Prediction;
 
 typedef struct  {
 
-    int32_t target;
-    int32_t tag;
-    int32_t history;
-    Prediction pred;
+	int32_t target;
+	int32_t tag;
+	int32_t history;
+	Prediction pred;
 
 } TableLine;
 
 
 /*struct of Branch predictor*/
 typedef struct {
-    SIM_stats stats;
-    unsigned btbsize;
-    unsigned historySize;
-    unsigned tagSize;
-    bool isGlobalHist;
-    bool isGlobalTable;
-    int shared;
-    TableLine *BTB;
+	SIM_stats stats;
+	unsigned btbsize;
+	unsigned historySize;
+	unsigned tagSize;
+	bool isGlobalHist;
+	bool isGlobalTable;
+	int shared;
+	TableLine *BTB;
 
 } BP;
 
@@ -32,32 +32,39 @@ typedef struct {
 BP MyBP;
 
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
-            bool isGlobalHist, bool isGlobalTable, int Shared){
+             bool isGlobalHist, bool isGlobalTable, int Shared){
 
-    MyBP.btbsize = btbSize;
-    MyBP.tagSize = tagSize;
-    MyBP.historySize = historySize;
-    MyBP.isGlobalHist = isGlobalHist;
-    MyBP.isGlobalTable = isGlobalTable;
-    MyBP.shared = Shared;
+	MyBP.btbsize = btbSize;
+	MyBP.tagSize = tagSize;
+	MyBP.historySize = historySize;
+	MyBP.isGlobalHist = isGlobalHist;
+	MyBP.isGlobalTable = isGlobalTable;
+	MyBP.shared = Shared;
 
-    MyBP.BTB = malloc(sizeof(TableLine)*btbSize);
+	MyBP.BTB = malloc(sizeof(TableLine)*btbSize);
 
-    if(MyBP.BTB == NULL)
-        return -1;
+	if(MyBP.BTB == NULL)
+		return -1;
 
-    return 0;
+	for (int i = 0; i < btbSize; i++) {
+		MyBP.BTB[i].pred = WNT;
+		MyBP.BTB[i].history = 0;
+		MyBP.BTB[i].tag = 0;
+		MyBP.BTB[i].target = 0;
+	}
+
+	return 0;
 
 }
 
 bool BP_predict(uint32_t pc, uint32_t *dst){
-    return false;
+	return false;
 }
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
-    return;
+	return;
 }
 
 void BP_GetStats(SIM_stats *curStats) {
-    return;
+	return;
 }
