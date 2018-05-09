@@ -68,3 +68,26 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
 void BP_GetStats(SIM_stats *curStats) {
 	return;
 }
+
+
+
+/*!
+ * createBitMask - Creates a bit mask from the bit indexes
+ * param[in] start - The starting index
+ * param[in] end - The ending index
+ */
+uint32_t createBitMask(uint32_t start, uint32_t end) {
+    return 0xFFFFFFFF >> start  << start  << (31 - end) >> (31 - end);
+}
+
+/*!
+* getNumber - Returns an unsigned sub-number of an address
+* param[in] address - The number from which to extract
+* param[in] start - The bit number from which to start (0 to 31)
+* param[in] end - The bit number from which to end (0 to 31)
+*/
+uint32_t getNumber(uint32_t address, uint32_t start, uint32_t end) {
+    // The bit mask of the start & end marks
+    uint32_t mask = createBitMask(start, end);
+    return (address & mask) >> start;
+}
