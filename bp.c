@@ -37,7 +37,10 @@ BP MyBP;
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
              bool isGlobalHist, bool isGlobalTable, int Shared){
 
-	MyBP.btbsize = btbSize;
+	if (btbSize > 1)
+		MyBP.btbsize = log2(btbSize);
+	else MyBP.btbsize = 1;
+
 	MyBP.tagSize = tagSize;
 	MyBP.historySize = historySize;
 	MyBP.isGlobalHist = isGlobalHist;
@@ -46,17 +49,20 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
     MyBP.globalHistory = 0;
     MyBP.globalPrediction = WNT;
 
-	MyBP.BTB = malloc(sizeof(TableLine)*btbSize);
 
+	MyBP.BTB = malloc(sizeof(TableLine)*MyBP.btbsize);
 	if(MyBP.BTB == NULL)
 		return -1;
 
-	for (int i = 0; i < btbSize; i++) {
+	for (int i = 0; i < MyBP.btbsize; i++) {
 		MyBP.BTB[i].pred = WNT;
 		MyBP.BTB[i].history = 0;
 		MyBP.BTB[i].tag = 0;
 		MyBP.BTB[i].target = 0;
 	}
+
+	return 0;
+
 
 	//init sim stat
 	MyBP.stats.br_num = 0;
