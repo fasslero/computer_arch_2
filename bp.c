@@ -9,7 +9,7 @@ typedef struct  {
 
 	int32_t target;
 	int32_t tag;
-	int32_t history;
+	int8_t history;
 	Prediction pred;
 
 } TableLine, *pTableLine;
@@ -23,7 +23,7 @@ typedef struct {
 	unsigned tagSize;
 	bool isGlobalHist;
 	bool isGlobalTable;
-    int32_t globalHistory;
+    int8_t globalHistory;
     Prediction globalPrediction;
 
     int shared;
@@ -94,25 +94,60 @@ bool BP_predict(uint32_t pc, uint32_t *dst){
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
     pTableLine btbLine;
-    int32_t history;
+    //int8_t history;
 
     //get the BTB line
     //todo
-    //update the btb line according to the parameters and local/global history
 
-    //get the local or global history and assign to history var
-    if (MyBP.isGlobalHist)
-        history = *MyBP.globalHistory;
-    else
-        history = btbLine->history;
+	///////
+    /// update the btb line according to the parameters and local/global history
+	///////
+
+	//get the local or global history and update the history
+	if (MyBP.isGlobalHist) {
+		updateHistory(*MyBP.globalHistory,taken);
+	}
+    else {
+		updateHistory(btbLine->history,taken);
+	}
 
 
+	// update the prediction
+	if (MyBP.isGlobalTable)
+		updatePrediction(*MyBP.globalPrediction, taken);
+	else
+		updatePrediction(*MyBP.BTB->pred, taken);
+
+	//update the predicted dest
+	btbLine->pred = pred_dst;
+	btbLine->tag = targetPc; //todo - need to add the pc target mask
 	return;
 }
 
 
 void BP_GetStats(SIM_stats *curStats) {
 	return *MyBP.stats;
+}
+
+
+/*!
+ * updates the prediction according to the given taken state
+ */
+void updatePrediction(Prediction *prediction, bool taken){
+	if (taken && prediction != ST)
+		prediction += 1;
+	else if (!taken && prediction !=SNT)
+		prediction -= 1;
+}
+
+/*!
+ * updates the history according to the given taken state
+ */
+void updateHistory(int32_t *history, bool taken){
+	//todo - check that pointers are right
+	int8_t historyMask = 0x00000001;
+	*history << 1;
+	*history = *history || (historyMask && taken);
 }
 
 /*!
