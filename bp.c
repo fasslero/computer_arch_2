@@ -3,16 +3,16 @@
 
 #include "bp_api.h"
 
-typedef enum  {WNT, NT, WT, T} Prediction;
+typedef enum  {SNT=0, WNT, WT, ST} Prediction;
 
 typedef struct  {
 
 	int32_t target;
 	int32_t tag;
-	int32_t history;
+	int8_t history;
 	Prediction pred;
 
-} TableLine;
+} TableLine, *pTableLine;
 
 
 /*struct of Branch predictor*/
@@ -23,7 +23,10 @@ typedef struct {
 	unsigned tagSize;
 	bool isGlobalHist;
 	bool isGlobalTable;
-	int shared;
+    int8_t globalHistory;
+    Prediction globalPrediction;
+
+    int shared;
 	TableLine *BTB;
 
 } BP;
@@ -34,19 +37,24 @@ BP MyBP;
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
              bool isGlobalHist, bool isGlobalTable, int Shared){
 
-	MyBP.btbsize = btbSize;
+	if (btbSize > 1)
+		MyBP.btbsעize = log2(btbSize);
+	else MyBP.btbsize = 1;
+
 	MyBP.tagSize = tagSize;
 	MyBP.historySize = historySize;
 	MyBP.isGlobalHist = isGlobalHist;
 	MyBP.isGlobalTable = isGlobalTable;
 	MyBP.shared = Shared;
+    MyBP.globalHistory = 0;
+    MyBP.globalPrediction = WNT;
 
-	MyBP.BTB = malloc(sizeof(TableLine)*btbSize);
 
+	MyBP.BTB = malloc(sizeof(TableLine)*MyBP.btbsize);
 	if(MyBP.BTB == NULL)
 		return -1;
 
-	for (int i = 0; i < btbSize; i++) {
+	for (int i = 0; i < MyBP.btbsize; i++) {
 		MyBP.BTB[i].pred = WNT;
 		MyBP.BTB[i].history = 0;
 		MyBP.BTB[i].tag = 0;
@@ -55,21 +63,105 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 
 	return 0;
 
+    // todo - why not needed?
+	//init sim stat
+	MyBP.stats.br_num = 0;
+	MyBP.stats.flush_num = 0;
+	MyBP.stats.size = 0; //TODO calc
+
+	return 0;
+
 }
+
 
 bool BP_predict(uint32_t pc, uint32_t *dst){
-	return false;
+	TableLine btbLine;
+	uint32_t defaultDstAddress = pc + 4;
+
+	//get the BTB line
+    btbLine = getBtbLine(pc);
+    //todo
+
+	//check whether the line is the desired one, if not set dst to default dst
+    if (btbLine.tag != pc){
+        *dst = defaultDstAddress;
+        return false;}
+	//if the address is there, check the Bimodal and return dst according
+    else{
+        if(btbLine.pred==ST || btbLine.pred==WT){
+            *dst = btbLine.target;
+            return true;
+        }
+    }
+    *dst = defaultDstAddress;
+    return false;
 }
+
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
+    pTableLine btbLine;
+    //int8_t history;
+
+    //get the BTB line
+    //todo
+
+	///////
+    /// update the btb line according to the parameters and local/global history
+	///////
+
+	//get the local or global history and update the history
+	if (MyBP.isGlobalHist) {
+		updateHistory(*MyBP.globalHistory,taken);
+	}
+    else {
+		updateHistory(btbLine->history,taken);
+	}
+
+
+	// update the prediction
+	if (MyBP.isGlobalTable)
+		updatePrediction(*MyBP.globalPrediction, taken);
+	else
+		updatePrediction(*MyBP.BTB->pred, taken);
+
+	//update the predicted dest
+	btbLine->pred = pred_dst;
+	btbLine->tag = targetPc; //todo - need to add the pc target mask
 	return;
 }
+
 
 void BP_GetStats(SIM_stats *curStats) {
-	return;
+	return *MyBP.stats;
 }
 
 
+/*!
+ * updates the prediction according to the given taken state
+ */
+void updatePrediction(Prediction *prediction, bool taken){
+	if (taken && prediction != ST)
+		prediction += 1;
+	else if (!taken && prediction !=SNT)
+		prediction -= 1;
+}
+
+/*!
+ * updates the history according to the given taken state
+ */
+void updateHistory(int32_t *history, bool taken){
+	//todo - check that pointers are right
+	int8_t historyMask = 0x00000001;
+	*history << 1;
+	*history = *history || (historyMask && taken);
+}
+
+/*!
+ * returns the pointer btb line according to the pc provided
+ */
+pTableLine getBtbLine(uint32_t pc){
+
+}
 
 /*!
  * createBitMask - Creates a bit mask from the bit indexes
