@@ -2,6 +2,7 @@
 /* This file should hold your implementation of the predictor simulator */
 
 #include "bp_api.h"
+#define HIGH_BIT 29
 
 typedef enum  {SNT=0, WNT, WT, ST} Prediction;
 
@@ -38,7 +39,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
              bool isGlobalHist, bool isGlobalTable, int Shared){
 
 	if (btbSize > 1)
-		MyBP.btbsעize = log2(btbSize);
+		MyBP.btbsize = log2(btbSize);
 	else MyBP.btbsize = 1;
 
 	MyBP.tagSize = tagSize;
@@ -63,7 +64,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 
 	return 0;
 
-    // todo - why not needed?
+
 	//init sim stat
 	MyBP.stats.br_num = 0;
 	MyBP.stats.flush_num = 0;
@@ -79,7 +80,7 @@ bool BP_predict(uint32_t pc, uint32_t *dst){
 	uint32_t defaultDstAddress = pc + 4;
 
 	//get the BTB line
-    btbLine = getBtbLine(pc);
+    btbLine = *getBtbLine(pc);
     //todo
 
 	//check whether the line is the desired one, if not set dst to default dst
@@ -103,7 +104,15 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
     //int8_t history;
 
     //get the BTB line
-    //todo
+    btbLine = getBtbLine(pc);
+	
+	//update the stats
+	MyBP.stats.br_num++;
+	if ((btbLine->pred == ST || btbLine->pred == WT) && !taken)  //predicted T and was wrong
+		MyBP.stats.flush_num++;
+	else if ((btbLine->pred == SNT || btbLine->pred == WNT) && taken) //predicted NT and was wrong
+		MyBP.stats.flush_num++;
+	
 
 	///////
     /// update the btb line according to the parameters and local/global history
@@ -111,7 +120,7 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
 
 	//get the local or global history and update the history
 	if (MyBP.isGlobalHist) {
-		updateHistory(*MyBP.globalHistory,taken);
+		updateHistory(MyBP.globalHistory,taken);
 	}
     else {
 		updateHistory(btbLine->history,taken);
@@ -120,19 +129,19 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
 
 	// update the prediction
 	if (MyBP.isGlobalTable)
-		updatePrediction(*MyBP.globalPrediction, taken);
+		updatePrediction(MyBP.globalPrediction, taken);
 	else
-		updatePrediction(*MyBP.BTB->pred, taken);
+		updatePrediction(MyBP.BTB->pred, taken);
 
 	//update the predicted dest
-	btbLine->pred = pred_dst;
-	btbLine->tag = targetPc; //todo - need to add the pc target mask
+	//btbLine->pred = pred_dst;	already updated the prediction above^
+	btbLine->tag = getNumber(pc, HIGH_BIT - MyBP.tagSize, HIGH_BIT); 
 	return;
 }
 
 
 void BP_GetStats(SIM_stats *curStats) {
-	return *MyBP.stats;
+	return MyBP.stats;
 }
 
 
@@ -160,7 +169,8 @@ void updateHistory(int32_t *history, bool taken){
  * returns the pointer btb line according to the pc provided
  */
 pTableLine getBtbLine(uint32_t pc){
-
+	uint32_t num = getNumber(pc, HIGH_BIT - MyBP.btbsize, HIGH_BIT);
+	return (MyBP.BTB + num);
 }
 
 /*!
