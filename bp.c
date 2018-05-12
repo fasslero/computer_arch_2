@@ -184,6 +184,8 @@ void updateHistory(int32_t *history, bool taken){
  * returns the pointer btb line according to the pc provided
  */
 pTableLine getBtbLine(uint32_t pc){
+    //todo - what about shared history? neet to add support for usingShareLsb and usingShareMid
+
 	uint32_t num = getNumber(pc, HIGH_BIT - MyBP.btbsize, HIGH_BIT);
 	return (MyBP.BTB + num);
 }
