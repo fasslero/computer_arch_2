@@ -26,6 +26,10 @@ typedef struct {
 	bool isGlobalTable;
     int8_t globalHistory;
     Prediction globalPrediction;
+    bool usingShareLsb;
+    bool usingShareMid;
+    int8_t historyMask;
+
 
     int shared;
 	TableLine *BTB;
@@ -50,10 +54,16 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
     MyBP.globalHistory = 0;
     MyBP.globalPrediction = WNT;
 
+    MyBP.usingShareLsb = (Shared == 1) ? 1 : 0;
+    MyBP.usingShareMid = (Shared == 2) ? 1 : 0;
+
+    MyBP.historyMask = 0x11111111;
 
 	MyBP.BTB = malloc(sizeof(TableLine)*MyBP.btbsize);
 	if(MyBP.BTB == NULL)
 		return -1;
+
+    // todo - separate to local or global history and global or local prediction state machine
 
 	for (int i = 0; i < MyBP.btbsize; i++) {
 		MyBP.BTB[i].pred = WNT;
@@ -62,14 +72,15 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 		MyBP.BTB[i].target = 0;
 	}
 
-	return 0;
-
-
 	//init sim stat
 	MyBP.stats.br_num = 0;
 	MyBP.stats.flush_num = 0;
 	MyBP.stats.size = 0; //TODO calc
 
+    //set the history mask according to the history size (zeros all the bit left to the history size)
+    for (i=0; i<(8-MyBP.historySize); i++)
+        MyBP.historyMask >> 1;
+    MyBP.historyMask = MyBP.historyMask - 1;
 	return 0;
 
 }
@@ -81,19 +92,21 @@ bool BP_predict(uint32_t pc, uint32_t *dst){
 
 	//get the BTB line
     btbLine = *getBtbLine(pc);
-    //todo
+
 
 	//check whether the line is the desired one, if not set dst to default dst
     if (btbLine.tag != pc){
         *dst = defaultDstAddress;
         return false;}
 	//if the address is there, check the Bimodal and return dst according
+        // todo - add global state machine option
     else{
         if(btbLine.pred==ST || btbLine.pred==WT){
             *dst = btbLine.target;
             return true;
         }
     }
+    //predict WNT or SNT
     *dst = defaultDstAddress;
     return false;
 }
@@ -101,7 +114,7 @@ bool BP_predict(uint32_t pc, uint32_t *dst){
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
     pTableLine btbLine;
-    //int8_t history;
+
 
     //get the BTB line
     btbLine = getBtbLine(pc);
@@ -160,9 +173,11 @@ void updatePrediction(Prediction *prediction, bool taken){
  */
 void updateHistory(int32_t *history, bool taken){
 	//todo - check that pointers are right
-	int8_t historyMask = 0x00000001;
-	*history << 1;
-	*history = *history || (historyMask && taken);
+
+	*history <<= 1;
+    if (taken)
+        *history |= 0x01;
+	    *history &= (MyBP.historyMask && taken);
 }
 
 /*!
