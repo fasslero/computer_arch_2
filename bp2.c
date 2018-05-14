@@ -73,7 +73,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 		MyBP.globalPrediction = (Prediction*)malloc(sizeof(Prediction)*arraySize); //allocating
 		if (MyBP.globalPrediction == NULL)
 			return -1;
-		for (int i = 0; i < arraySize; i++)	// intializing to WNT
+		for (int i = 0; i < arraySize; i++)	// initializing to WNT
 			MyBP.globalPrediction[i] = WNT;
 
 	}
@@ -84,7 +84,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	MyBP.historyMask = 0xFF;
 
 	MyBP.BTB = (TableLine*)malloc(sizeof(TableLine)*MyBP.btbsize);
-	if (MyBP.BTB == NULL)
+	if (MyBP.BTB == NULL) // todo - can lead to memory leak
 		return -1;
 
 
@@ -97,7 +97,8 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 		else {
 			//each line points to array of Bimodal
 			MyBP.BTB[i].pred = (Prediction*)malloc(sizeof(Prediction)*arraySize);//allocate array for each line
-			if (MyBP.BTB[i].pred == NULL)
+			if (MyBP.BTB[i].pred == NULL) // todo - can lead to memory leak (need to free all
+										//todo - the memory that was allocated previously)
 				return -1;
 
 			for (int j = 0; i < historySize; i++) //sets all Bimodals to WNT
@@ -133,7 +134,7 @@ bool BP_predict(uint32_t pc, uint32_t *dst) {
 
 	//get the BTB line
 	btbLine = getBtbLine(pc);
-	int idx = *(btbLine->history);		//
+	int idx = *(btbLine->history);
 	//get the tag of curr pc
 	uint32_t tag = getNumber(pc, 2, MyBP.tagSize + 1);
 
@@ -144,27 +145,23 @@ bool BP_predict(uint32_t pc, uint32_t *dst) {
 		return false;
 	}
 	//if the address is there, check the Bimodal and return dst according
-	// todo V - add global state machine option (if global already pointing to the global) 
 
 	//if GShare or LShare
 	if (MyBP.usingShareLsb) {
 		uint8_t xorMask = getNumber(pc, 2, MyBP.historySize + 1); // xor with bit 2 ^
 		idx = (idx ^ xorMask);
 	}
-
-	if (MyBP.usingShareMid) {
+	else if (MyBP.usingShareMid) {
 		uint8_t xorMask = getNumber(pc, 16, MyBP.historySize + 1); //xor with bit 16 ^
 		idx = (idx ^ xorMask);
 	}
-
-
-	else {
-		//the index is the history of the btbline (if global pointing to global)
-		if (btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) {
-			*dst = btbLine->target;
-			return true;
-		}
+	// todo - you don't use the idx that was calculated, I deleted the 'else' statement
+	//the index is the history of the btbline (if global pointing to global)
+	if (btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) {
+		*dst = btbLine->target;
+		return true;
 	}
+
 	//predict WNT or SNT
 	*dst = defaultDstAddress;
 	return false;
@@ -228,29 +225,26 @@ void updatePrediction(Prediction *prediction, bool taken) {
 		prediction -= 1;
 }
 
+
 /*!
 * updates the history according to the given taken state
 */
 void updateHistory(int32_t *history, bool taken) {
-	//todo - check that pointers are right
-
 	*history <<= 1;
 	if (taken)
 		*history |= 0x01;
 	*history &= (MyBP.historyMask && taken);
 }
 
+
 /*!
 * returns the pointer btb line according to the pc provided
 */
 pTableLine getBtbLine(uint32_t pc) {
-	//todo - what about shared history? neet to add support for usingShareLsb and usingShareMid
-	//see predict
-
-
 	uint32_t num = getNumber(pc, HIGH_BIT - MyBP.btbsize, HIGH_BIT);
 	return MyBP.BTB + num;
 }
+
 
 /*!
 * createBitMask - Creates a bit mask from the bit indexes
@@ -260,6 +254,7 @@ pTableLine getBtbLine(uint32_t pc) {
 uint32_t createBitMask(uint32_t start, uint32_t end) {
 	return 0xFFFFFFFF >> start << start << (31 - end) >> (31 - end);
 }
+
 
 /*!
 * getNumber - Returns an unsigned sub-number of an address
