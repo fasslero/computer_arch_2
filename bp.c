@@ -174,6 +174,7 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 
 	//update the stats
 	MyBP.stats.br_num++;
+    //todo - why pred in idx place?
 	if ((btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) && !taken)  //predicted T and was wrong
 		MyBP.stats.flush_num++;
 	else if ((btbLine->pred[idx] == SNT || btbLine->pred[idx] == WNT) && taken) //predicted NT and was wrong
@@ -184,30 +185,18 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 	/// update the btb line according to the parameters and local/global history
 	///////
 
-	//get the local or global history and update the history
-	if (MyBP.isGlobalHist) {
-		updateHistory(&MyBP.globalHistory, taken);
-	}
-	else {
-		updateHistory(btbLine->history, taken);
-	}
-
-
-	// update the prediction
-	if (MyBP.isGlobalTable)
-		updatePrediction(MyBP.globalPrediction, taken);
-	else
-		updatePrediction(MyBP.BTB->pred + idx, taken);
-
-	//update the predicted dest
-	//btbLine->pred = pred_dst;	already updated the prediction above^
+    updateHistory(btbLine->history, taken);
+    //update the predicted dest
+    updatePrediction(btbLine->pred, taken);
+	//todo - i think the next line doesn't work
 	btbLine->tag = getNumber(pc, HIGH_BIT - MyBP.tagSize, HIGH_BIT);
 	return;
 }
 
 
 void BP_GetStats(SIM_stats *curStats) {
-	curStats = &(MyBP.stats);
+	// todo - not working? wtf?
+    curStats = &(MyBP.stats);
 }
 
 
@@ -216,9 +205,9 @@ void BP_GetStats(SIM_stats *curStats) {
 */
 void updatePrediction(Prediction *prediction, bool taken) {
 	if (taken && *prediction != ST)
-		prediction += 1;
+		*prediction += 1;
 	else if (!taken && *prediction != SNT)
-		prediction -= 1;
+		*prediction -= 1;
 }
 
 
