@@ -53,7 +53,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	bool isGlobalHist, bool isGlobalTable, int Shared) {
 
 	if (btbSize > 1)
-		MyBP.btbsize = (int)log2(btbSize);
+		MyBP.btbsize = (int)log2(btbSize); // todo - why log2?
 	else MyBP.btbsize = 1;
 
 	//calculating the size of Bimodal array of one line
@@ -68,28 +68,27 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	*MyBP.globalPrediction = WNT;
 	MyBP.shared = Shared;
 	MyBP.globalHistory = 0;
-	
-	//if Global table allocate one array
-	if (isGlobalTable) {
-		MyBP.globalPrediction = (Prediction*)malloc(sizeof(Prediction)*arraySize); //allocating
-		if (MyBP.globalPrediction == NULL)
-			return -1;
-		for (int i = 0; i < arraySize; i++)	// initializing to WNT
+    MyBP.usingShareLsb = (Shared == 1) ? 1 : 0;
+    MyBP.usingShareMid = (Shared == 2) ? 1 : 0;
+
+    MyBP.historyMask = 0xFF;
+
+    MyBP.BTB = (TableLine*)malloc(sizeof(TableLine)*MyBP.btbsize);
+    if (MyBP.BTB == NULL) // todo - can lead to memory leak
+        return -1;
+
+    //if Global table allocate one array
+    if (isGlobalTable) {
+        MyBP.globalPrediction = (Prediction*)malloc(sizeof(Prediction)*arraySize); //allocating
+        if (MyBP.globalPrediction == NULL) {
+            return -1;
+		}
+		for (int i = 0; i < arraySize; ++i){ // initializing to WNT
 			MyBP.globalPrediction[i] = WNT;
-
-	}
-
-	MyBP.usingShareLsb = (Shared == 1) ? 1 : 0;
-	MyBP.usingShareMid = (Shared == 2) ? 1 : 0;
-
-	MyBP.historyMask = 0xFF;
-
-	MyBP.BTB = (TableLine*)malloc(sizeof(TableLine)*MyBP.btbsize);
-	if (MyBP.BTB == NULL) // todo - can lead to memory leak
-		return -1;
+		}
 
 
-	
+    }
 
 	for (int i = 0; i < MyBP.btbsize; i++) {
 		if (MyBP.isGlobalTable)						//pointing to the global predictor
@@ -102,7 +101,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 										//todo - the memory that was allocated previously)
 				return -1;
 
-			for (int j = 0; i < historySize; i++) //sets all Bimodals to WNT
+			for (int j = 0; j < arraySize; j++) //sets all Bimodals to WNT todo - changed from history size to array size, ok?
 				MyBP.BTB[i].pred[j] = WNT;
 		}
 
