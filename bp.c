@@ -12,7 +12,7 @@ typedef struct {
 
 	int32_t target;
 	int32_t tag;
-	int8_t *history;
+	uint8_t *history;
 	Prediction *pred;
 
 } TableLine, *pTableLine;
@@ -26,11 +26,11 @@ typedef struct {
 	unsigned tagSize;
 	bool isGlobalHist;
 	bool isGlobalTable;
-	int8_t globalHistory;
+	uint8_t globalHistory;
 	Prediction *globalPrediction;
 	bool usingShareLsb;
 	bool usingShareMid;
-	int8_t historyMask;
+	uint8_t historyMask;
 
 
 	int shared;
@@ -42,7 +42,7 @@ typedef struct {
 BP MyBP;
 
 //Functions
-void updateHistory(int8_t *history, bool taken);
+void updateHistory(uint8_t *history, bool taken);
 void updatePrediction(Prediction *prediction, bool taken);
 pTableLine getBtbLine(uint32_t pc);
 uint32_t createBitMask(uint32_t start, uint32_t end);
@@ -52,20 +52,17 @@ uint32_t getNumber(uint32_t address, uint32_t start, uint32_t end);
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	bool isGlobalHist, bool isGlobalTable, int Shared) {
 
-	if (btbSize > 1)
-		MyBP.btbsize = (int)log2(btbSize); // todo - why log2?
-	else MyBP.btbsize = 1;
-
 	//calculating the size of Bimodal array of one line
-	int arraySize = 1;
+	uint8_t arraySize = 1;
 	for (int i = 0; i < historySize; i++)
 		arraySize *= 2;
 
+    MyBP.btbsize = btbSize;
 	MyBP.tagSize = tagSize;
 	MyBP.historySize = historySize;
 	MyBP.isGlobalHist = isGlobalHist;
 	MyBP.isGlobalTable = isGlobalTable;
-	*MyBP.globalPrediction = WNT;
+	//*MyBP.globalPrediction = WNT;
 	MyBP.shared = Shared;
 	MyBP.globalHistory = 0;
     MyBP.usingShareLsb = (Shared == 1) ? 1 : 0;
@@ -73,7 +70,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 
     MyBP.historyMask = 0xFF;
 
-    MyBP.BTB = (TableLine*)malloc(sizeof(TableLine)*MyBP.btbsize);
+    MyBP.BTB = (pTableLine)malloc(sizeof(TableLine)*MyBP.btbsize);
     if (MyBP.BTB == NULL) // todo - can lead to memory leak
         return -1;
 
@@ -86,8 +83,6 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 		for (int i = 0; i < arraySize; ++i){ // initializing to WNT
 			MyBP.globalPrediction[i] = WNT;
 		}
-
-
     }
 
 	for (int i = 0; i < MyBP.btbsize; i++) {
@@ -108,8 +103,9 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 		if (MyBP.isGlobalHist)						//pointing to global history
 			MyBP.BTB[i].history = &MyBP.globalHistory;
 		else
+            //allocate memory for local history
+            MyBP.BTB[i].history = (uint8_t*)malloc(sizeof(uint8_t));
 			*MyBP.BTB[i].history = 0;
-			
 		MyBP.BTB[i].tag = 0;
 		MyBP.BTB[i].target = 0;
 	}
@@ -229,7 +225,7 @@ void updatePrediction(Prediction *prediction, bool taken) {
 /*!
 * updates the history according to the given taken state
 */
-void updateHistory(int8_t *history, bool taken) {
+void updateHistory(uint8_t *history, bool taken) {
 	*history <<= 1;
 	if (taken)
 		*history |= 0x01;
