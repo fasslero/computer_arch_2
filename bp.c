@@ -50,6 +50,7 @@ pTableLine getBtbLine(uint32_t pc);
 uint32_t createBitMask(uint32_t start, uint32_t end);
 uint32_t getNumber(uint32_t address, uint32_t start, uint32_t end);
 int get_idx(int pc, pTableLine btbLine);
+int btbSizeCalc(void);
 
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	bool isGlobalHist, bool isGlobalTable, int Shared) {
@@ -114,7 +115,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	//init sim stat
 	MyBP.stats.br_num = 0;
 	MyBP.stats.flush_num = 0;
-	MyBP.stats.size = 0; //TODO calc
+	MyBP.stats.size = btbSizeCalc(); //TODO calc
 
 	//set the history mask according to the history size (zeros all the bit left to the history size)
 	for (int i = 0; i<(8 - MyBP.historySize); i++)
@@ -161,8 +162,8 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 
 	int idx;
 	uint32_t tag = getNumber(pc, 2, MyBP.tagSize + 1);
-
-	//get the BTB line
+    uint8_t lastWasTaken;
+    //get the BTB line
 	btbLine = getBtbLine(pc);
 
 	//flush the hixtory and prediction table if there is a miss match between the pc and the tag
@@ -181,14 +182,15 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 
 	//update the stats
 	MyBP.stats.br_num++;
+    lastWasTaken = *btbLine->history & 1; //check if the last predicted branch was predicted taken
 
 	if ((btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) && !taken)  //predicted T and was wrong
 		MyBP.stats.flush_num++;
 	else if ((btbLine->pred[idx] == SNT || btbLine->pred[idx] == WNT) && taken) //predicted NT and was wrong
 		MyBP.stats.flush_num++;
-    else if(targetPc != pred_dst)
+    else if (lastWasTaken && targetPc!=pred_dst) {
         MyBP.stats.flush_num++;
-
+    }
 
 	///////
 	/// update the btb line according to the parameters and local/global history
@@ -280,4 +282,18 @@ int get_idx(int pc, pTableLine btbLine) {
 	}
 
 	return idx;
+}
+
+int btbSizeCalc(){
+    int size=0;
+    int tableCount;
+    int historyCount;
+
+    historyCount = (MyBP.isGlobalHist ? 1:MyBP.btbsize);
+
+    tableCount = pow(2,MyBP.historySize) * (MyBP.isGlobalTable ? 1: MyBP.btbsize);
+
+    size = historyCount*MyBP.historySize + 2*tableCount +(30+MyBP.tagSize)*MyBP.btbsize;
+
+    return size;
 }
