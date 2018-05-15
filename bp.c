@@ -33,6 +33,7 @@ typedef struct {
 	bool usingShareMid;
 	uint8_t historyMask;
 	uint8_t arraySize;
+	bool last_prediction;
 
 
 	int shared;
@@ -70,11 +71,12 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	MyBP.globalHistory = 0;
 	MyBP.usingShareLsb = (Shared == 1) ? 1 : 0;
 	MyBP.usingShareMid = (Shared == 2) ? 1 : 0;
+	MyBP.last_prediction = false;
 
 	MyBP.historyMask = 0xFF;
 
 	MyBP.BTB = (pTableLine)malloc(sizeof(TableLine)*MyBP.btbsize);
-	if (MyBP.BTB == NULL) // todo - can lead to memory leak
+	if (MyBP.BTB == NULL)
 		return -1;
 
 	//if Global table allocate one array
@@ -115,7 +117,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	//init sim stat
 	MyBP.stats.br_num = 0;
 	MyBP.stats.flush_num = 0;
-	MyBP.stats.size = btbSizeCalc(); //TODO calc
+	MyBP.stats.size = btbSizeCalc();
 
 	//set the history mask according to the history size (zeros all the bit left to the history size)
 	for (int i = 0; i<(8 - MyBP.historySize); i++)
@@ -141,6 +143,7 @@ bool BP_predict(uint32_t pc, uint32_t *dst) {
 	//check whether the line is the desired one, if not set dst to default dst
 	if (btbLine->tag != tag) {
 		*dst = defaultDstAddress;
+		MyBP.last_prediction = false;
 		return false;
 	}
 	//if the address is there, check the Bimodal and return dst according
@@ -148,11 +151,13 @@ bool BP_predict(uint32_t pc, uint32_t *dst) {
 	//the index is the history of the btbline (if global pointing to global)
 	if (btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) {
 		*dst = btbLine->target;
+		MyBP.last_prediction = true;
 		return true;
 	}
 
 	//predict WNT or SNT
 	*dst = defaultDstAddress;
+	MyBP.last_prediction = false;
 	return false;
 }
 
@@ -162,11 +167,11 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 
 	int idx;
 	uint32_t tag = getNumber(pc, 2, MyBP.tagSize + 1);
-    uint8_t lastWasTaken;
-    //get the BTB line
+
+	//get the BTB line
 	btbLine = getBtbLine(pc);
 
-	//flush the hixtory and prediction table if there is a miss match between the pc and the tag
+	//flush the history and prediction table if there is a miss match between the pc and the tag
 	if (btbLine->tag != tag && MyBP.stats.br_num > 0) {
 
 		//don't flush global history
@@ -175,22 +180,19 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 		if (!MyBP.isGlobalTable){
 			for (int i = 0; i < MyBP.arraySize; i++)
 				btbLine->pred[i] = WNT;
-		}
+		} else
+			;
 	}
 
 	idx = get_idx(pc, btbLine);
 
 	//update the stats
 	MyBP.stats.br_num++;
-    lastWasTaken = *btbLine->history & 1; //check if the last predicted branch was predicted taken
 
-	if ((btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) && !taken)  //predicted T and was wrong
+	if (MyBP.last_prediction != taken)
 		MyBP.stats.flush_num++;
-	else if ((btbLine->pred[idx] == SNT || btbLine->pred[idx] == WNT) && taken) //predicted NT and was wrong
+	else if (MyBP.last_prediction && (pred_dst!=targetPc))
 		MyBP.stats.flush_num++;
-    else if (lastWasTaken && targetPc!=pred_dst) {
-        MyBP.stats.flush_num++;
-    }
 
 	///////
 	/// update the btb line according to the parameters and local/global history
