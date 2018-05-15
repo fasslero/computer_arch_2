@@ -32,6 +32,7 @@ typedef struct {
 	bool usingShareMid;
 	uint8_t historyMask;
 	uint8_t arraySize;
+	bool last_prediction;
 
 
 	int shared;
@@ -48,7 +49,7 @@ void updatePrediction(Prediction *prediction, bool taken);
 pTableLine getBtbLine(uint32_t pc);
 uint32_t createBitMask(uint32_t start, uint32_t end);
 uint32_t getNumber(uint32_t address, uint32_t start, uint32_t end);
-int get_idx(int pc, pTableLine btbLine);
+
 
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	bool isGlobalHist, bool isGlobalTable, int Shared) {
@@ -68,6 +69,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	MyBP.globalHistory = 0;
 	MyBP.usingShareLsb = (Shared == 1) ? 1 : 0;
 	MyBP.usingShareMid = (Shared == 2) ? 1 : 0;
+	MyBP.last_prediction = false;
 
 	MyBP.historyMask = 0xFF;
 
@@ -140,28 +142,20 @@ bool BP_predict(uint32_t pc, uint32_t *dst) {
 	//check whether the line is the desired one, if not set dst to default dst
 	if (btbLine->tag != tag) {
 		*dst = defaultDstAddress;
+		MyBP.last_prediction = false;
 		return false;
 	}
-	//if the address is there, check the Bimodal and return dst according
-
-	//if GShare or LShare
-	//if (MyBP.usingShareLsb) {
-	//	uint8_t xorMask = getNumber(pc, 2, MyBP.historySize + 1); // xor with bit 2 ^
-	//	idx = (idx ^ xorMask);
-	//}
-	//else if (MyBP.usingShareMid) {
-	//	uint8_t xorMask = getNumber(pc, 16, MyBP.historySize + 15); //xor with bit 16 ^
-	//	idx = (idx ^ xorMask);
-	//}
-	// todo - you don't use the idx that was calculated, I deleted the 'else' statement
+	
 	//the index is the history of the btbline (if global pointing to global)
 	if (btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) {
 		*dst = btbLine->target;
+		MyBP.last_prediction = true;
 		return true;
 	}
 
 	//predict WNT or SNT
 	*dst = defaultDstAddress;
+	MyBP.last_prediction = false;
 	return false;
 }
 
@@ -184,7 +178,7 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 		int arraySize = 1;
 		for (int i = 0; i < MyBP.historySize; i++)
 			arraySize *= 2;
-		for (int i = 0; i < arraySize; i++)
+		for (int i = 0; i < arraySize && !MyBP.isGlobalTable; i++)
 			btbLine->pred[i] = WNT;
 	}
 
@@ -194,11 +188,10 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 
 	//update the stats
 	MyBP.stats.br_num++;
-	//todo - why pred in idx place?
-	if ((btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) && !taken)  //predicted T and was wrong
+
+	if (MyBP.last_prediction != taken)
 		MyBP.stats.flush_num++;
-	else if ((btbLine->pred[idx] == SNT || btbLine->pred[idx] == WNT) && taken) //predicted NT and was wrong
-		MyBP.stats.flush_num++;
+	
 
 
 	///////
@@ -282,8 +275,8 @@ uint32_t getNumber(uint32_t address, uint32_t start, uint32_t end) {
 	return (address & mask) >> start;
 }
 
-int get_idx(int pc, pTableLine btbLine) {
-	int idx = *(btbLine->history);
+int get_idx(int pc, pTableLine btbline) {
+	int idx = *(btbline->history);
 	if (MyBP.usingShareLsb) {
 		uint8_t xorMask = getNumber(pc, 2, MyBP.historySize + 1); // xor with bit 2 ^
 		idx = (idx ^ xorMask);
