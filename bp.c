@@ -4,6 +4,7 @@
 #include "bp_api.h"
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 #define HIGH_BIT 29
 
 typedef enum { SNT = 0, WNT, WT, ST } Prediction;
@@ -31,6 +32,7 @@ typedef struct {
 	bool usingShareLsb;
 	bool usingShareMid;
 	uint8_t historyMask;
+	uint8_t arraySize;
 
 
 	int shared;
@@ -47,15 +49,15 @@ void updatePrediction(Prediction *prediction, bool taken);
 pTableLine getBtbLine(uint32_t pc);
 uint32_t createBitMask(uint32_t start, uint32_t end);
 uint32_t getNumber(uint32_t address, uint32_t start, uint32_t end);
-
+int get_idx(int pc, pTableLine btbLine);
 
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	bool isGlobalHist, bool isGlobalTable, int Shared) {
 
 	//calculating the size of Bimodal array of one line
-	uint8_t arraySize = 1;
+	 MyBP.arraySize = 1;
 	for (int i = 0; i < historySize; i++)
-		arraySize *= 2;
+		MyBP.arraySize *= 2;
 
 	MyBP.btbsize = btbSize;
 	MyBP.tagSize = tagSize;
@@ -76,27 +78,26 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 
 	//if Global table allocate one array
 	if (isGlobalTable) {
-		MyBP.globalPrediction = (Prediction*)malloc(sizeof(Prediction)*arraySize); //allocating
+		MyBP.globalPrediction = (Prediction*)malloc(sizeof(Prediction)*MyBP.arraySize); //allocating
 		if (MyBP.globalPrediction == NULL) {
 			return -1;
 		}
-		for (int i = 0; i < arraySize; ++i) { // initializing to WNT
+		for (int i = 0; i < MyBP.arraySize; ++i) { // initializing to WNT
 			MyBP.globalPrediction[i] = WNT;
 		}
 	}
 
 	for (int i = 0; i < MyBP.btbsize; i++) {
-		if (MyBP.isGlobalTable)						//pointing to the global predictor
+		if (MyBP.isGlobalTable)	//pointing to the global predictor
 			MyBP.BTB[i].pred = MyBP.globalPrediction;
 
 		else {
 			//each line points to array of Bimodal
-			MyBP.BTB[i].pred = (Prediction*)malloc(sizeof(Prediction)*arraySize);//allocate array for each line
-			if (MyBP.BTB[i].pred == NULL) // todo - can lead to memory leak (need to free all
-										  //todo - the memory that was allocated previously)
+			MyBP.BTB[i].pred = (Prediction*)malloc(sizeof(Prediction)*MyBP.arraySize);//allocate array for each line
+			if (MyBP.BTB[i].pred == NULL)
 				return -1;
 
-			for (int j = 0; j < arraySize; j++) //sets all Bimodals to WNT todo - changed from history size to array size, ok?
+			for (int j = 0; j < MyBP.arraySize; j++) //sets all Bimodals to WNT
 				MyBP.BTB[i].pred[j] = WNT;
 		}
 
@@ -130,7 +131,8 @@ bool BP_predict(uint32_t pc, uint32_t *dst) {
 
 	//get the BTB line
 	btbLine = getBtbLine(pc);
-	int idx = *(btbLine->history);
+	int idx = get_idx(pc, btbLine);
+	//int idx = *(btbLine->history);
 	//get the tag of curr pc
 	uint32_t tag = getNumber(pc, 2, MyBP.tagSize + 1);
 
@@ -142,16 +144,6 @@ bool BP_predict(uint32_t pc, uint32_t *dst) {
 	}
 	//if the address is there, check the Bimodal and return dst according
 
-	//if GShare or LShare
-	if (MyBP.usingShareLsb) {
-		uint8_t xorMask = getNumber(pc, 2, MyBP.historySize + 1); // xor with bit 2 ^
-		idx = (idx ^ xorMask);
-	}
-	else if (MyBP.usingShareMid) {
-		uint8_t xorMask = getNumber(pc, 16, MyBP.historySize + 15); //xor with bit 16 ^
-		idx = (idx ^ xorMask);
-	}
-	// todo - you don't use the idx that was calculated, I deleted the 'else' statement
 	//the index is the history of the btbline (if global pointing to global)
 	if (btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) {
 		*dst = btbLine->target;
@@ -167,14 +159,29 @@ bool BP_predict(uint32_t pc, uint32_t *dst) {
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 	pTableLine btbLine;
 
+	int idx;
+	uint32_t tag = getNumber(pc, 2, MyBP.tagSize + 1);
 
 	//get the BTB line
 	btbLine = getBtbLine(pc);
-	int idx = *(btbLine->history);
+
+	//flush the hixtory and prediction table if there is a miss match between the pc and the tag
+	if (btbLine->tag != tag && MyBP.stats.br_num > 0) {
+
+		//don't flush global history
+		if (!MyBP.isGlobalHist)
+			*(btbLine->history) = 0;
+		if (!MyBP.isGlobalTable){
+			for (int i = 0; i < MyBP.arraySize; i++)
+				btbLine->pred[i] = WNT;
+		}
+	}
+
+	idx = get_idx(pc, btbLine);
 
 	//update the stats
 	MyBP.stats.br_num++;
-	//todo - why pred in idx place?
+
 	if ((btbLine->pred[idx] == ST || btbLine->pred[idx] == WT) && !taken)  //predicted T and was wrong
 		MyBP.stats.flush_num++;
 	else if ((btbLine->pred[idx] == SNT || btbLine->pred[idx] == WNT) && taken) //predicted NT and was wrong
@@ -185,23 +192,22 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 	/// update the btb line according to the parameters and local/global history
 	///////
 
-	updateHistory(btbLine->history, taken);
-	//update the predicted dest
-	btbLine->target = targetPc;
-
 	// update the prediction
 	if (MyBP.isGlobalTable)
 		updatePrediction(MyBP.globalPrediction + idx, taken);
 	else
 		updatePrediction(btbLine->pred + idx, taken);
-	//todo - i think the next line doesn't work
+	//update the history
+	updateHistory(btbLine->history, taken);
 	btbLine->tag = getNumber(pc, 2, MyBP.tagSize + 1);
+
+	//update the predicted dest
+	btbLine->target = targetPc;
 	return;
 }
 
 
 void BP_GetStats(SIM_stats *curStats) {
-	// todo - not working? wtf?
 	*curStats = MyBP.stats;
 }
 
@@ -257,4 +263,19 @@ uint32_t getNumber(uint32_t address, uint32_t start, uint32_t end) {
 	// The bit mask of the start & end marks
 	uint32_t mask = createBitMask(start, end);
 	return (address & mask) >> start;
+}
+
+// get the index to the bimodal table according to the history
+int get_idx(int pc, pTableLine btbLine) {
+	int idx = *(btbLine->history);
+	if (MyBP.usingShareLsb) {
+		uint8_t xorMask = getNumber(pc, 2, MyBP.historySize + 1); // xor with bit 2 ^
+		idx = (idx ^ xorMask);
+	}
+	else if (MyBP.usingShareMid) {
+		uint8_t xorMask = getNumber(pc, 16, MyBP.historySize + 15); //xor with bit 16 ^
+		idx = (idx ^ xorMask);
+	}
+
+	return idx;
 }

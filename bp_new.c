@@ -48,7 +48,7 @@ void updatePrediction(Prediction *prediction, bool taken);
 pTableLine getBtbLine(uint32_t pc);
 uint32_t createBitMask(uint32_t start, uint32_t end);
 uint32_t getNumber(uint32_t address, uint32_t start, uint32_t end);
-
+int get_idx(int pc, pTableLine btbLine);
 
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	bool isGlobalHist, bool isGlobalTable, int Shared) {
@@ -282,8 +282,8 @@ uint32_t getNumber(uint32_t address, uint32_t start, uint32_t end) {
 	return (address & mask) >> start;
 }
 
-int get_idx(int pc, pTableLine btbline) {
-	int idx = *(btbline->history);
+int get_idx(int pc, pTableLine btbLine) {
+	int idx = *(btbLine->history);
 	if (MyBP.usingShareLsb) {
 		uint8_t xorMask = getNumber(pc, 2, MyBP.historySize + 1); // xor with bit 2 ^
 		idx = (idx ^ xorMask);
