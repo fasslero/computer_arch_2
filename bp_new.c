@@ -31,6 +31,7 @@ typedef struct {
 	bool usingShareLsb;
 	bool usingShareMid;
 	uint8_t historyMask;
+	uint8_t arraySize;
 
 
 	int shared;
@@ -53,9 +54,9 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 	bool isGlobalHist, bool isGlobalTable, int Shared) {
 
 	//calculating the size of Bimodal array of one line
-	uint8_t arraySize = 1;
+	 MyBP.arraySize = 1;
 	for (int i = 0; i < historySize; i++)
-		arraySize *= 2;
+		MyBP.arraySize *= 2;
 
 	MyBP.btbsize = btbSize;
 	MyBP.tagSize = tagSize;
@@ -76,11 +77,11 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 
 	//if Global table allocate one array
 	if (isGlobalTable) {
-		MyBP.globalPrediction = (Prediction*)malloc(sizeof(Prediction)*arraySize); //allocating
+		MyBP.globalPrediction = (Prediction*)malloc(sizeof(Prediction)*MyBP.arraySize); //allocating
 		if (MyBP.globalPrediction == NULL) {
 			return -1;
 		}
-		for (int i = 0; i < arraySize; ++i) { // initializing to WNT
+		for (int i = 0; i < MyBP.arraySize; ++i) { // initializing to WNT
 			MyBP.globalPrediction[i] = WNT;
 		}
 	}
@@ -91,12 +92,12 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
 
 		else {
 			//each line points to array of Bimodal
-			MyBP.BTB[i].pred = (Prediction*)malloc(sizeof(Prediction)*arraySize);//allocate array for each line
+			MyBP.BTB[i].pred = (Prediction*)malloc(sizeof(Prediction)*MyBP.arraySize);//allocate array for each line
 			if (MyBP.BTB[i].pred == NULL) // todo - can lead to memory leak (need to free all
 										  //todo - the memory that was allocated previously)
 				return -1;
 
-			for (int j = 0; j < arraySize; j++) //sets all Bimodals to WNT todo - changed from history size to array size, ok?
+			for (int j = 0; j < MyBP.arraySize; j++) //sets all Bimodals to WNT todo - changed from history size to array size, ok?
 				MyBP.BTB[i].pred[j] = WNT;
 		}
 
@@ -169,8 +170,26 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 	pTableLine btbLine;
 
 
+	uint32_t tag = getNumber(pc, 2, MyBP.tagSize + 1);
+
 	//get the BTB line
 	btbLine = getBtbLine(pc);
+
+	
+	if (btbLine->tag != tag && MyBP.stats.br_num > 0) {
+		
+		if (!MyBP.isGlobalHist)
+			*(btbLine->history) = 0;
+
+		int arraySize = 1;
+		for (int i = 0; i < MyBP.historySize; i++)
+			arraySize *= 2;
+		for (int i = 0; i < arraySize; i++)
+			btbLine->pred[i] = WNT;
+	}
+
+
+
 	int idx = get_idx(pc, btbLine);
 
 	//update the stats
@@ -186,17 +205,20 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 	/// update the btb line according to the parameters and local/global history
 	///////
 
-	updateHistory(btbLine->history, taken);
-	//update the predicted dest
-	btbLine->target = targetPc;
-
 	// update the prediction
 	if (MyBP.isGlobalTable)
 		updatePrediction(MyBP.globalPrediction + idx, taken);
 	else
 		updatePrediction(btbLine->pred + idx, taken);
-	//todo - i think the next line doesn't work
+	updateHistory(btbLine->history, taken);
 	btbLine->tag = getNumber(pc, 2, MyBP.tagSize + 1);
+	
+	//update the predicted dest
+	btbLine->target = targetPc;
+
+	
+	//todo - i think the next line doesn't work
+	
 	return;
 }
 
