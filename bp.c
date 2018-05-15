@@ -186,6 +186,8 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 		MyBP.stats.flush_num++;
 	else if ((btbLine->pred[idx] == SNT || btbLine->pred[idx] == WNT) && taken) //predicted NT and was wrong
 		MyBP.stats.flush_num++;
+    else if(targetPc != pred_dst)
+        MyBP.stats.flush_num++;
 
 
 	///////
